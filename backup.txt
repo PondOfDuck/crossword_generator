@@ -1,0 +1,254 @@
+import numpy as np
+import copy
+import json
+import jsonpickle
+
+
+# 1. Heuristik: möglichst kleines Rechteck -> Graph: hier wirds schwierig
+# 2. Heuristik: möglichst viele Überschneidungen -> Graph: Anzahl der Knoten
+
+
+class Position:
+    __row: int
+    __col: int
+
+    def __init__(self, row: int = -1, col: int = -1):
+        self.__row = row
+        self.__col = col
+
+    def get_row(self):
+        return self.__row
+
+    def get_col(self):
+        return self.__col
+
+    def set_row(self, row):
+        self.__row = row
+
+    def set_col(self, col):
+        self.__col = col
+
+
+class Board:
+    __size: int
+    grid: np.chararray
+
+    def __init__(self, size: int):
+        self.__size = size
+        self.__create_grid()
+
+    def __create_grid(self):
+        self.grid = np.chararray((self.__size, self.__size), unicode=True)
+
+    def print_board(self):
+        for row in self.grid:
+            print(row)
+
+    def get_size(self):
+        return self.__size
+
+    def put(self, x, y, char):
+        pass
+
+
+class WordPlacement:
+    __word: str
+    __position: Position
+    __direction: str
+
+    def __init__(self, word: str = "", position: Position = Position(), direction: str = ""):
+        self.__word = word
+        self.__position = position
+        self.__direction = direction
+
+    def get_word(self):
+        return self.__word
+
+    def set_word(self, new_word: str):
+        self.__word = new_word
+
+    def get_position(self):
+        return self.__position
+
+    def set_position(self, pos: Position):
+        self.__position = pos
+
+    def get_direction(self):
+        return self.__direction
+
+    def set_direction(self, direction: str):
+        self.__direction = direction
+
+
+class CrosswordGenerator:
+    __board: Board
+    __word_list: []
+    __tracker = {}
+
+    def __init__(self, board: Board, word_list: []):
+        # Option: zufällig sortieren
+        self.__board = board
+        self.__word_list = word_list
+        self.__set_start_word_position(word_list[0])
+
+    @staticmethod
+    def __pretty_print(obj):
+        serialized = jsonpickle.encode(obj)
+        print(json.dumps(json.loads(serialized), indent=2))
+
+    def __set_start_word_position(self, first_word: str):
+        col = (self.__board.get_size() - len(first_word)) // 2
+        row = self.__board.get_size() // 2
+        self.__tracker[first_word] = (Position(row, col), "right")
+        # print(self.__tracker[first_word][0].get_row(), self.__tracker[first_word][0].get_col())
+
+        for char in first_word:
+            self.__board.grid[row][col] = char
+            col = col + 1
+
+        self.generate_crossword()
+
+    def generate_crossword(self):
+        for word_index in range(len(listOfWords) - 1):
+            options_list = self.__find_options(listOfWords[word_index + 1])
+            # print(len(options_list))
+            for option in options_list:
+                # print(option[0], option[1], option[2][0].row, option[2][0].col, option[2][1])
+                self.__validate_option(option, listOfWords[word_index + 1])
+
+    def __find_options(self, new_word):
+        result = []
+
+        for set_word in self.__tracker.keys():
+            letter_list = list(set_word)
+            for letter_index in range(len(letter_list)):
+                for char in list(new_word):
+                    if char == letter_list[letter_index]:
+                        temp = copy.deepcopy(self.__tracker.get(set_word))
+                        if temp[1] == "right":
+                            temp[0].set_col(temp[0].get_col() + letter_index)
+                        else:
+                            temp[0].set_row(temp[0].get_row() + letter_index)
+                        word_placement = WordPlacement(set_word, temp[0], temp[1])
+                        result.append([word_placement, letter_list[letter_index]])
+        for option in result:
+            CrosswordGenerator.__pretty_print(option)
+        return result
+
+    def __validate_option(self, option, new_word):
+        # TODO: Doppelte Buchstaben ?!
+        prefix = new_word.index(option[1])  # Länge des Teilworts VOR dem kollidierenden Buchstaben
+        suffix = len(new_word) - new_word.index(option[1]) - 1  # Länge des Teilworts NACH dem kollidierenden Buchstaben
+        new_word_placement = WordPlacement()
+
+        # Fall 1: Neues Wort sprengt das Board
+        if option[0].get_direction() == "right":  # hier wird die Richtung des "alten" Wortes geprüft
+            if (option[0].get_position().get_row() + suffix) > self.__board.get_size() - 1 or (
+                    option[0].get_position().get_row() - prefix) < 0:
+                print("Out of board! RIGHT Row: " + option[0].get_position().get_row() + " Column: " + option[0].get_position().get_col())
+                return False
+            new_word_placement = WordPlacement(
+                new_word,
+                Position(option[0].get_position().get_row() - prefix, option[0].get_position().get_col()),
+                "down")
+
+        elif option[0].get_direction() == "down":
+            if (option[0].get_position().get_col() - suffix) > self.__board.get_size() - 1 or (
+                    option[0].get_position().get_col() - prefix) < 0:
+                print("Out of board! DOWN Row: " + option[0].get_position().get_row() + " Column: " + option[0].get_position().get_col())
+                return False
+            new_word_placement = WordPlacement(
+                new_word,
+                Position(option[0].get_position().get_col() - prefix, option[0].get_position().get_row()),
+                "right")
+
+        CrosswordGenerator.__pretty_print(new_word_placement)
+
+        # self.__board.print_board()
+
+        # Fall 2&3: Neues Wort überschneidet sich mit einem bestehenden Wort oder ist "zu nah" an einem anderen Wort
+        if new_word_placement.get_direction() == "down":
+            letter_position = new_word_placement.get_position()  # 1, 2
+            # überprüft den ersten und letzten Buchstaben des zu setzenden Wortes, ob "davor" oder "danach" schon ein
+            # Buchstabe steht (je nach Schreibrichtung) TODO: ungetestet
+            if new_word_placement.get_position().get_row() - 1 >= 0:
+                if self.__board.grid[new_word_placement.get_position().get_row() - 1][new_word_placement.get_position().get_col()] != "":
+                    print("Abbruch wegen out of Board 1")
+                    return False
+
+            if new_word_placement.get_position().get_row() + 1 < self.__board.get_size():
+                if self.__board.grid[new_word_placement.get_position().get_row() + len(new_word_placement.get_word())][new_word_placement.get_position().get_col()] != "":
+                    print("Abbruch wegen out of Board 2")
+                    return False
+
+            # überprüft alle Buchstaben zu setzenden Wort orthogonal zur Schreibrichtung
+            for i in range(len(new_word_placement.get_word())):
+                # Fall an der zu untersuchenden Position befindet sich der korrekte Buchstabe
+                if new_word_placement.get_word()[i] == self.__board.grid[letter_position.get_row()][letter_position.get_col()]:
+                    letter_position.set_row(letter_position.get_row() + 1)  # nächsten Buchstaben anschauen, aber per print signalisieren, dass hier ein Schnittpunkt war
+                    print("Duckduck")
+                    continue
+                # Fall an der zu untersuchenden Position befindet sich ein anderer Buchstabe
+                elif self.__board.grid[letter_position.get_row()][letter_position.get_col()] != "":
+                    print("Überschneidung mit schon gesetztem Wort vorhanden")
+                    return False
+                # else: Feld ist noch leer
+
+                # Nachbarfelder des zu untersuchenden Buchstaben überprüfen
+                if \
+                    letter_position.get_col() + 1 > self.__board.get_size() \
+                    or letter_position.get_col() - 1 < 0 \
+                    or self.__board.grid[letter_position.get_row()][letter_position.get_col() + 1] != "" \
+                    or self.__board.grid[letter_position.get_row()][letter_position.get_col() - 1] != "":
+                    print("Words too close! ")
+                    break
+
+                # Zeile von letter_position um 1 vergrößern (da wir im "down"-Fall sind)
+                letter_position.set_row(letter_position.get_row() + 1)
+
+        # TODO: ungetestet
+        elif new_word_placement.get_direction() == "right":
+            letter_position = new_word_placement.get_position()  # 1, 2
+            # überprüft den ersten und letzten Buchstaben des zu setzenden Wortes, ob "davor" oder "danach" schon ein
+            # Buchstabe steht (je nach Schreibrichtung) TODO: ungetestet
+            if new_word_placement.get_position().get_col() - 1 > 0:
+                if self.__board.grid[new_word_placement.get_position().get_row()][new_word_placement.get_position().get_col() - 1] != "":
+                    print("Abbruch wegen out of Board 3")
+                    return False
+
+            if new_word_placement.get_position().get_col() + 1 < self.__board.get_size():
+                if self.__board.grid[new_word_placement.get_position().get_row()][new_word_placement.get_position().get_col() + len(new_word_placement.get_word())] != "":
+                    print("Abbruch wegen out of Board 4")
+                    return False
+
+            # überprüft alle Buchstaben zu setzenden Wort orthogonal zur Schreibrichtung
+            for i in range(len(new_word_placement.get_word())):
+                # CrosswordGenerator.__pretty_print(letter_position)
+                if new_word_placement.get_word()[i] == self.__board.grid[letter_position.get_row()][
+                    letter_position.get_col()]:
+                    letter_position.set_row(letter_position.get_col() + 1)
+                    print("Duckduck")
+                    continue
+                elif self.__board.grid[letter_position.get_row()][letter_position.get_col()] != "":
+                    print("Überschneidung mit schon gesetztem Wort vorhanden")
+                    return False
+                if \
+                    letter_position.get_row() + 1 > self.__board.get_size() \
+                    or letter_position.get_row() - 1 < 0 \
+                    or self.__board.grid[letter_position.get_row() + 1][letter_position.get_col()] != "" \
+                    or self.__board.grid[letter_position.get_row() - 1][letter_position.get_col()] != "":
+                    print("Words too close! ")
+                    break
+
+                # Zeile von letter_position um 1 vergrößern (da wir im "down"-Fall sind)
+                letter_position.set_row(letter_position.get_col() + 1)
+
+
+if __name__ == '__main__':
+    listOfWords = ["amulett", "zebra"]
+    listOfWords2 = ["amulett", "zebra", "filter", "hymen", "rudern", "burger", "karosserie", "dinge", "hilfe",
+                    "vermuten"]
+
+    ducky = Board(7)
+    duckys_brother = CrosswordGenerator(ducky, listOfWords)
+    # ducky.print_board()
